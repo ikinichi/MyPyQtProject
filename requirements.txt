@@ -1,0 +1,9 @@
+PyQt5
+plotly
+requests
+beautifulsoup4
+qt_material
+yfinance
+PyQtWebEngine
+qasync
+aiomisc

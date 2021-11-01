@@ -1,3 +1,10 @@
+import asyncio
+import functools
+
+import aiomisc
+import qasync
+
+from exception_handler import handle_exception
 from library import *
 import news_window
 import venv_account_window
@@ -18,22 +25,22 @@ class MyWidget(QMainWindow):
         self.plot_widget = QWebEngineView(self)
 
         self.add_elem_comboBox(self.comboBox)
-        self.graph_draw(self.comboBox, self.comboBox_2, self.comboBox_3, self.plot_widget)
         self.update_news()
         self.thread()
 
         self.pushButton.clicked.connect(self.open_venv_account)
         self.pushButton_2.clicked.connect(self.open_all_news)
-        self.pushButton_3.clicked.connect(
-            lambda: self.graph_draw(self.comboBox, self.comboBox_2, self.comboBox_3, self.plot_widget))
+        self.pushButton_3.clicked.connect(self.graph_draw)
 
-    def open_venv_account(self):
+    @qasync.asyncSlot()
+    async def open_venv_account(self):
         """Открывает <Виртуальный счет>.
         И закрывает настоящее окно."""
         self.exit_bool = False
         self.venvAcc = venv_account_window.MyWidgetVenvAccount()
         self.venvAcc.show()
         self.hide()
+        await self._graph_draw(self.comboBox, self.comboBox_2, self.comboBox_3, self.plot_widget)
 
     def open_all_news(self):
         """Открывает <Просмотр всех новостей>.
@@ -92,7 +99,11 @@ class MyWidget(QMainWindow):
         for elem in quotes[9::]:  # у значений такой-же класс при парсинге, но в quotes их учитывать не нужно
             name_combo_box.addItem(elem.text)
 
-    def graph_draw(self, combo_box, combo_box_2, combo_box_3, plot_widget):
+    @qasync.asyncSlot()
+    async def graph_draw(self):
+        return await self._graph_draw(self.comboBox, self.comboBox_2, self.comboBox_3, self.plot_widget)
+
+    async def _graph_draw(self, combo_box, combo_box_2, combo_box_3, plot_widget):
         """Создание 2-ух графиков:
         1)краткосрочный скользящий средний с 5-ю периодами
         2)долгосрочный скользящий средний с 20-ю периодами
@@ -101,22 +112,33 @@ class MyWidget(QMainWindow):
         period = combo_box_2.currentText()
         interval = combo_box_3.currentText()
 
-        data = yf.download(tickers=crypto + "-USD", period=period, interval=interval)
+        await asyncio.sleep(5)
+        data = await aiomisc.threaded(yf.download)(tickers=crypto + "-USD", period=period, interval=interval)
 
         data['MA5'] = data['Close'].rolling(5).mean()  # 5-ти периодный график
         data['MA20'] = data['Close'].rolling(20).mean()  # 20-ти периодный график
 
         fig = Figure()
-        fig.update_layout(title="Алгоритм 'Золотой Крест'",
-                          xaxis_title="Цена",
-                          yaxis_title="Дата",
-                          margin=dict(l=0, r=0, t=30, b=0))
+        fig.update_layout(
+            title="Алгоритм 'Золотой Крест'",
+            xaxis_title="Цена",
+            yaxis_title="Дата",
+            margin=dict(l=0, r=0, t=30, b=0)
+        )
 
-        fig.add_trace(Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'],
-                                  close=data['Close'], name='Price'))
+        fig.add_trace(
+            Candlestick(
+                x=data.index, open=data['Open'], high=data['High'], low=data['Low'],
+                close=data['Close'], name='Price'
+            )
+        )
         fig.update_layout(xaxis_rangeslider_visible=False)
-        fig.add_trace(Scatter(x=data.index, y=data['MA20'], line=dict(color='blue', width=1.5), name='Long MA'))
-        fig.add_trace(Scatter(x=data.index, y=data['MA5'], line=dict(color='orange', width=1.5), name='Short MA'))
+        fig.add_trace(
+            Scatter(x=data.index, y=data['MA20'], line=dict(color='blue', width=1.5), name='Long MA')
+        )
+        fig.add_trace(
+            Scatter(x=data.index, y=data['MA5'], line=dict(color='orange', width=1.5), name='Short MA')
+        )
 
         html = '<html><body>'
         html += plotly.offline.plot(fig, output_type='div', include_plotlyjs='cdn')
@@ -127,10 +149,36 @@ class MyWidget(QMainWindow):
         plot_widget.resize(921, 501)  # размеры окна
 
 
-if __name__ == '__main__':
+async def main():
+    sys.excepthook = handle_exception
+
+    def close_future(future, loop):
+        loop.call_later(10, future.cancel)
+        future.cancel()
+
+    loop = asyncio.get_event_loop()
+    future = asyncio.Future()
+
     app = QApplication(sys.argv)
+    if hasattr(app, "aboutToQuit"):
+        getattr(app, "aboutToQuit").connect(
+            functools.partial(close_future, future, loop)
+        )
+
     apply_stylesheet(app, theme='dark_teal.xml')
     widget = MyWidget()
     widget.show()
 
-    sys.exit(app.exec())
+    # loop.create_task(
+    #     widget.graph_draw(widget.comboBox, widget.comboBox_2, widget.comboBox_3, widget.plot_widget)
+    # )
+
+    await future
+    return True
+
+
+if __name__ == '__main__':
+    try:
+        qasync.run(main())
+    except asyncio.exceptions.CancelledError:
+        sys.exit()

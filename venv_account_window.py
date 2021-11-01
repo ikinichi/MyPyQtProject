@@ -1,3 +1,5 @@
+import qasync
+
 from library import *
 import main_window
 
@@ -7,12 +9,15 @@ class MyWidgetVenvAccount(QMainWindow):
         super().__init__()
         uic.loadUi("./untitled_3.ui", self)
         MyWidgetVenvAccount.setWindowTitle(self, "Venv Account")
-        MyWidgetVenvAccount.setFixedSize(self, MyWidgetVenvAccount.width(self), MyWidgetVenvAccount.height(self))
+        MyWidgetVenvAccount.setFixedSize(
+            self,
+            MyWidgetVenvAccount.width(self),
+            MyWidgetVenvAccount.height(self)
+        )
 
         self.plot_widget = QWebEngineView(self)
 
         main_window.MyWidget().add_elem_comboBox(self.comboBox)
-        main_window.MyWidget().graph_draw(self.comboBox, self.comboBox_2, self.comboBox_3, self.plot_widget)
 
         self.crypto = self.comboBox.currentText()
         self.label_14.setText("ВСЕГО '" + self.crypto + "'")
@@ -37,8 +42,14 @@ class MyWidgetVenvAccount(QMainWindow):
         self.mywidget.show()
         self.hide()
 
-    def update_graph_and_label(self):
-        main_window.MyWidget().graph_draw(self.comboBox, self.comboBox_2, self.comboBox_3, self.plot_widget)
+    @qasync.asyncSlot()
+    async def update_graph_and_label(self):
+        await main_window.MyWidget()._graph_draw(
+            self.comboBox,
+            self.comboBox_2,
+            self.comboBox_3,
+            self.plot_widget
+        )
         self.crypto = self.comboBox.currentText()
         self.label_14.setText("ВСЕГО '" + self.crypto + "'")
 
@@ -53,8 +64,10 @@ class MyWidgetVenvAccount(QMainWindow):
 
         con = sqlite3.connect("./date_news_db.db")
         cur = con.cursor()
-        cur.execute("""UPDATE cryptos SET sum = sum + ?, invest = invest + ? WHERE name LIKE ?""",
-                    (buy_crypto, buy_crypto_usd, crypto)).fetchall()
+        cur.execute(
+            """UPDATE cryptos SET sum = sum + ?, invest = invest + ? WHERE name LIKE ?""",
+            (buy_crypto, buy_crypto_usd, crypto)
+        ).fetchall()
         con.commit()
 
         self.update_value_crypto()
@@ -70,12 +83,15 @@ class MyWidgetVenvAccount(QMainWindow):
 
         con = sqlite3.connect("./date_news_db.db")
         cur = con.cursor()
-        proverka_price = cur.execute("""SELECT sum FROM cryptos WHERE name LIKE ?""", (crypto,)).fetchall()[0][0]
+        proverka_price = \
+            cur.execute("""SELECT sum FROM cryptos WHERE name LIKE ?""", (crypto,)).fetchall()[0][0]
         if proverka_price - buy_crypto < 0:
             return
         else:
-            cur.execute("""UPDATE cryptos SET sum = sum - ?, invest = invest - ? WHERE name LIKE ?""",
-                        (buy_crypto, buy_crypto_usd, crypto)).fetchall()
+            cur.execute(
+                """UPDATE cryptos SET sum = sum - ?, invest = invest - ? WHERE name LIKE ?""",
+                (buy_crypto, buy_crypto_usd, crypto)
+            ).fetchall()
             con.commit()
 
         self.update_value_crypto()
@@ -90,7 +106,9 @@ class MyWidgetVenvAccount(QMainWindow):
         self.lineEdit_5.setText(str(sum_buy_crypto[0][0]))
 
         # TOTAL
-        invest_total = sum([float(elem[0]) for elem in cur.execute("""SELECT invest FROM cryptos""").fetchall()])
+        invest_total = sum(
+            [float(elem[0]) for elem in cur.execute("""SELECT invest FROM cryptos""").fetchall()]
+        )
         quotes_result_total = cur.execute("""SELECT name, sum FROM cryptos""").fetchall()
         result_total = 0
         for elem in quotes_result_total:
@@ -103,11 +121,14 @@ class MyWidgetVenvAccount(QMainWindow):
 
         # TOTAL crypto
         invest_total_crypto = cur.execute(
-            """SELECT invest FROM cryptos WHERE name LIKE ?""", (crypto,)).fetchall()[0][0]
+            """SELECT invest FROM cryptos WHERE name LIKE ?""", (crypto,)
+        ).fetchall()[0][0]
         quotes_result_total_crypto = cur.execute(
-            """SELECT name, sum FROM cryptos WHERE name LIKE ?""", (crypto,)).fetchall()
+            """SELECT name, sum FROM cryptos WHERE name LIKE ?""", (crypto,)
+        ).fetchall()
         result_total_crypto = float(quotes_result_total_crypto[0][1]) * self.dct_crypto_price.get(
-            quotes_result_total_crypto[0][0])
+            quotes_result_total_crypto[0][0]
+        )
         difference_total_crypto = result_total_crypto - float(invest_total_crypto)
 
         self.lineEdit_8.setText(str(invest_total_crypto))
